@@ -1,0 +1,32 @@
+<!doctype html>
+<script>
+function startWorkerAndObserver(t, worker_url) {
+  let reports = [];
+  const worker = new Worker(worker_url);
+  const error_promise = new Promise(resolve => worker.onerror = resolve);
+  const worker_promise = new Promise(resolve => worker.onmessage = resolve);
+  const timeout_promise = new Promise(resolve => t.step_timeout(resolve, 1000));
+  worker.postMessage("postMessage('success');");
+
+  const report_promise = new Promise(resolve => {
+    const observer = new ReportingObserver(reports => {
+      observer.disconnect();
+      resolve(reports.map(r => r.toJSON()));
+    });
+    observer.observe();
+  });
+
+  Promise.all([error_promise, report_promise]).then(results => {
+    parent.postMessage({result: 'error', reports: results[1]});
+  });
+  Promise.all([error_promise, timeout_promise]).then(results => {
+    parent.postMessage({result: 'error', reports: []});
+  });
+  Promise.all([worker_promise, report_promise]).then(results => {
+    parent.postMessage({result: results[0].data, reports: results[1]});
+  });
+  Promise.all([worker_promise, timeout_promise]).then(results => {
+    parent.postMessage({result: results[0].data, reports: []});
+  });
+}
+</script>
