@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+<meta charset=utf-8>
+<meta name="timeout" content="long">
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src="RTCPeerConnection-helper.js"></script>
+</head>
+<body>
+<script>
+  'use strict';
+
+// This test checks that <video> capture works via PeerConnection.
+
+promise_test(async t => {
+  const source_video = document.createElement('video');
+  source_video.src = "/media/test-v-128k-320x240-24fps-8kfr.webm";
+  source_video.loop = true;
+
+  const onCanPlay = new Promise(r => source_video.oncanplay = r);
+  await onCanPlay;
+
+  const pc1 = new RTCPeerConnection();
+  t.add_cleanup(() => pc1.close());
+  const pc2 = new RTCPeerConnection();
+  t.add_cleanup(() => pc2.close());
+
+  // Attach video to pc1.
+  const stream = source_video.captureStream();;
+  const tracks = stream.getTracks();
+  pc1.addTrack(tracks[0]);
+
+  const dest_video = document.createElement('video');
+  dest_video.autoplay = true;
+
+  // Setup pc1->pc2.
+  const haveTrackEvent1 = new Promise(r => pc2.ontrack = r);
+  exchangeIceCandidates(pc1, pc2);
+  await pc1.setLocalDescription();
+  await pc2.setRemoteDescription(pc1.localDescription);
+  await pc2.setLocalDescription();
+  await pc1.setRemoteDescription(pc2.localDescription);
+
+  // Display pc2 received track in video element.
+  const onLoadedMetadata = new Promise(r => dest_video.onloadedmetadata = r);
+  dest_video.srcObject = new MediaStream([(await haveTrackEvent1).track]);
+
+  // Start playback and wait for video on the other side.
+  source_video.play();
+  await onLoadedMetadata;
+
+  // Wait some time to ensure that frames got through.
+  await new Promise(resolve => t.step_timeout(resolve, 1000));
+
+  // Uses Helper.js GetVideoSignal to query |dest_video| pixel value at a certain position.
+  const pixel_value = getVideoSignal(dest_video).toFixed();
+
+  // Expected value computed based on GetVideoSignal code, which takes green pixel data
+  // with coefficient 0.72.
+  assert_true(0.72*255 - 2 < pixel_value && pixel_value < 0.72*255 + 2);
+  }, "Capturing a video element and sending it via PeerConnection");
+</script>
+</body>
+</html>
